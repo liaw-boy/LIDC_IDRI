@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['nodule']
+
+roboflow:
+  workspace: lungcancerct
+  project: max_lung_img
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/lungcancerct/max_lung_img/dataset/1
