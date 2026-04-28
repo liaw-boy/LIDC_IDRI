@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+
+# Dataset & Large Files
+*.dcm
+*.png
+*.rar
+*.zip
+*.tibx
+
+# Models (Optional: sometimes we don't want to git large weights)
+# If you want to git the models, comment out the lines below
+# *.pt
+# *.pth
+
+# Project specific
+/runs/
+/output/
+/dataset/
+/sample_data/
+/results/
