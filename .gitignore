@@ -1,4 +1,4 @@
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -24,3 +24,7 @@ venv/
 /dataset/
 /sample_data/
 /results/
+
+# Models
+models/*.pt
+models/*.pth
