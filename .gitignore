@@ -8,7 +8,7 @@ venv/
 
 # Dataset & Large Files
 *.dcm
-*.png
+# *.png (Allowing images for docs)
 *.rar
 *.zip
 *.tibx
