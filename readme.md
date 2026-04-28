@@ -1,15 +1,46 @@
-# LIDC-IDRI Mark the Location of Lung Nodules
-這份專案是用來標記肺結節所在位置，根據LIDC-IDRI資料庫中所提供的CT(.dcm)以及xml(有四位醫生針對切片的描述)，將座標值轉為COCO.json形式，並與原圖使用相同UID(用來辨識CT的唯一性)作為檔名，提供給roboflow標記
-文件還在慢慢編輯中.... 請耐心稍後\
-資料庫來源：https://www.cancerimagingarchive.net/collection/lidc-idri/ \
-資料標記&分配：https://universe.roboflow.com/lungcancerct/max_lung_img/dataset/1 
-# 程式碼簡介
-### movefile.py
-從LIDC-IDRI下載Dataset時，我沒有只選擇CT下載，以至於同時下載了另一個Data，加上我們所需的資料需要打開兩個資料夾才到達，因此這個程式的作用是將較多的.dcm
-檔案的資料夾內容物全部拖移到根目錄，並將其餘非必要的資料都刪除。 \
-因為每次測試生成結果我都存在個別病人的建立一個以xml同檔名的資料夾中，每次的測試都會增減一些不同的內容物，而每當最終測試完都讓我的輸出塞了一堆垃圾，這個程式也只會刪除跟目錄底下的子目錄，不會刪到我們的原始資料。
-### annallcsv.py
-每次寫程式都寫很多個版本，所以看到這個命名大概也知道是多個功能的合併版本，我們的目的是提取xml中醫生給予病人所描繪的結節切片座標位置，轉換為COCO.json檔案，並同時將有病徵的切片以及.json命名為SOP_UID，使得上傳至Roboflow可以自動偵測相同檔名標記病徵區塊．
-### CSV
-紀錄這個SOP_UID(切片)是來自哪個病人
-# Roboflow
+# 肺結節良惡性輔助診斷系統 (Lung Nodule Detection & Malignancy Classification)
+
+本專案為淡江大學資訊工程系專題研究成果，開發一套結合深度學習物件偵測與多尺度特徵提取分類技術的醫療影像輔助系統。
+
+## 🌟 系統特點
+
+- **高精度偵測**：採用 **YOLOv11** 物件偵測演算法，針對 LUNA16 資料集進行優化，能精準定位 CT 影像中的肺結節位置。
+- **雙路徑特徵融合 (Dual Input CNN)**：
+    - **ROI 路徑**：聚焦結節局部型態特徵。
+    - **Full CT 路徑**：捕捉結節周圍組織與全局上下文資訊。
+    - 結合兩者特徵，顯著提升良惡性判斷的準確率（達 94.7%），並降低誤診率。
+- **整合式 GUI 介面**：基於 **PyQt5** 開發，提供醫師直觀的作業環境，支援 DICOM 影像載入、自動偵測與良惡性結果標註。
+
+## 📂 專案結構
+
+- **/gui_app**: 系統主程式 (`cnn_detector_v1.py`) 與介面邏輯。
+- **/detection_yolo**: YOLOv11 訓練腳本與偵測模型配置。
+- **/classification_cnn**: 雙輸入分類模型架構、訓練程式與 DataLoader。
+- **/preprocessing**: LIDC-IDRI/LUNA16 原始數據處理與 COCO 格式轉換工具。
+- **/models**: (建議存放處) 存放訓練好的 `.pt` 與 `.pth` 模型權重（未包含在 Git 中）。
+
+## 🚀 執行環境
+
+### 必要套件
+```bash
+pip install ultralytics pydicom PyQt5 torch torchvision opencv-python numpy
+```
+
+### 啟動系統
+1. 請確保將訓練好的 `best.pt` 與 `dual_input_best_auc_model.pth` 放入 `gui_app/` 目錄或指定路徑。
+2. 執行主程式：
+```bash
+python gui_app/cnn_detector_v1.py
+```
+
+## 📊 研究成果
+- **偵測準確率 (mAP@0.5)**: 0.88+
+- **分類準確率 (Accuracy)**: 94.7%
+- **分類召回率 (Recall)**: 94.7%
+
+## 👥 研究團隊
+- **指導老師**：淡江大學資訊工程系 教授
+- **組員**：陳威丞、廖柏維、鍾翔宇、江昊宸
+
+---
+*本系統僅供研究與輔助參考用途，臨床診斷請以專業醫師判斷為準。*
