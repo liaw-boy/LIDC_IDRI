@@ -1,0 +1,9 @@
+PyQt5
+ultralytics
+torch
+torchvision
+opencv-python
+pydicom
+numpy
+matplotlib
+PyYAML

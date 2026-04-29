@@ -1,0 +1,6 @@
+cnn:
+  model_path: H:\Lung_Nodule_System\models\dual_input_final_model.pth
+device: cpu
+threshold: 0.4
+yolo:
+  model_path: H:\Lung_Nodule_System\models\best.pt
