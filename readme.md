@@ -37,7 +37,7 @@ pip install ultralytics pydicom PyQt5 torch torchvision opencv-python numpy
 ```
 
 ### 啟動系統
-1. 請確保將訓練好的 `best.pt` 與 `dual_input_best_auc_model.pth` 放入 `gui_app/` 目錄或指定路徑。
+1. 請確保將訓練好的 `best.pt` 與 `dual_input_final_model.pth` 放入 `models/` 目錄或指定路徑。
 2. 執行主程式：
 ```bash
 python gui_app/cnn_detector_v1.py
