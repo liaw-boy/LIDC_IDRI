@@ -29,6 +29,23 @@
 | **假陰性 (FN)** | 92 例 | **50 例** | -45.70% |
 
 ---
+
+## 📂 專案結構 (Project Structure)
+
+本專案採模組化設計，各目錄功能說明如下：
+
+- **`gui_app/`**: 系統主程式與 UI 組件 (PyQt5)。
+- **`models/`**: 存放 YOLOv11 與 3D CNN 的模型權重 (`.pt`, `.pth`)。
+- **`preprocessing/`**: 醫療影像預處理腳本 (DICOM 標註、特徵提取)。
+- **`classification_cnn/`**: CNN 模型訓練、Dataloader 與模型架構定義。
+- **`detection_yolo/`**: YOLO 偵測模型訓練配置與腳本。
+- **`scripts/`**: 通用工具腳本（如標註 CSV 整合、檔案移動等）。
+- **`data/`**: 存放標籤數據與測試樣本 (`data/sample`)。
+- **`docs/`**: 專案文檔、架構圖與開發手冊。
+- **`output/`**: 預設的診斷結果輸出目錄。
+
+---
+
 ## 🚀 執行環境
 
 ### 必要套件
@@ -37,11 +54,13 @@ pip install ultralytics pydicom PyQt5 torch torchvision opencv-python numpy
 ```
 
 ### 啟動系統
-1. 請確保將訓練好的 `best.pt` 與 `dual_input_final_model.pth` 放入 `models/` 目錄或指定路徑。
-2. 執行主程式：
-```bash
-python gui_app/cnn_detector_v1.py
-```
+1. **快速設定 (Windows)**：執行專案根目錄下的 `setup.bat` 即可自動建立虛擬環境並安裝依賴。
+2. **手動啟動**：
+   - 請確保將訓練好的 `best.pt` 與 `dual_input_final_model.pth` 放入 `models/` 目錄。
+   - 執行主程式：
+     ```bash
+     python -m gui_app.cnn_detector_v1
+     ```
 
 ## 📊 研究成果
 - **偵測準確率 (mAP@0.5)**: 0.88+
