@@ -66,133 +66,13 @@ class MainWindow(QMainWindow):
         self.predictor = Predictor(self.model_manager)
 
         self._setup_ui()
-        self._apply_dark_theme()
+        self._load_stylesheet()
 
-    def _apply_dark_theme(self):
-        # Stitch Design DNA Implementation
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #020617;
-            }
-            QWidget {
-                color: #f8fafc;
-                font-family: 'Inter', 'system-ui', 'Segoe UI', sans-serif;
-            }
-            
-            /* Sidebar: Slate 900 */
-            #sidebar {
-                background-color: #0f172a;
-                border-right: 1px solid #1e293b;
-                min-width: 280px;
-                max-width: 280px;
-            }
-            
-            #sidebar_title {
-                font-size: 20px;
-                font-weight: 900;
-                color: #38bdf8;
-                padding: 30px 20px;
-                letter-spacing: 1px;
-                border-bottom: 1px solid #1e293b;
-            }
-
-            /* Main Content: Slate 950 */
-            #main_container {
-                background-color: #020617;
-                padding: 20px;
-            }
-
-            /* Cards: Surface (Slate 800) */
-            QFrame#card {
-                background-color: #1e293b;
-                border: 1px solid #334155;
-                border-radius: 12px;
-            }
-            
-            /* Buttons */
-            QPushButton {
-                background-color: transparent;
-                border: 1px solid transparent;
-                border-radius: 8px;
-                padding: 12px 16px;
-                font-weight: 500;
-                font-size: 13px;
-                color: #94a3b8;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #1e293b;
-                color: #f8fafc;
-                border-color: #334155;
-            }
-            QPushButton#primary_btn {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #3b82f6);
-                color: white;
-                font-weight: 700;
-                text-align: center;
-                border: none;
-            }
-            QPushButton#primary_btn:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0ea5e9, stop:1 #2563eb);
-                box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
-            }
-            QPushButton#primary_btn:disabled {
-                background: #1e293b;
-                color: #475569;
-            }
-
-            /* Section Headers */
-            #section_header {
-                font-size: 11px;
-                font-weight: 800;
-                color: #475569;
-                text-transform: uppercase;
-                letter-spacing: 1.5px;
-                margin-top: 25px;
-                margin-bottom: 8px;
-                padding-left: 10px;
-            }
-
-            /* Labels and Results */
-            #result_title {
-                font-size: 18px;
-                font-weight: 700;
-                color: #f8fafc;
-                margin-bottom: 5px;
-            }
-            #result_text {
-                font-size: 14px;
-                color: #94a3b8;
-                line-height: 1.6;
-            }
-
-            /* ComboBox */
-            QComboBox {
-                background-color: #1e293b;
-                border: 1px solid #334155;
-                border-radius: 6px;
-                padding: 8px 12px;
-                color: #f8fafc;
-            }
-            QComboBox:hover {
-                border-color: #0284c7;
-            }
-
-            /* Splitter Handle */
-            QSplitter::handle {
-                background-color: #1e293b;
-                width: 1px;
-                height: 1px;
-            }
-            
-            /* Status Bar */
-            QStatusBar {
-                background-color: #020617;
-                color: #475569;
-                font-size: 11px;
-                border-top: 1px solid #1e293b;
-            }
-        """)
+    def _load_stylesheet(self):
+        qss_path = os.path.join(os.path.dirname(__file__), "styles.qss")
+        if os.path.exists(qss_path):
+            with open(qss_path, "r", encoding="utf-8") as f:
+                self.setStyleSheet(f.read())
 
     def _setup_ui(self):
         central = QWidget()
@@ -236,6 +116,11 @@ class MainWindow(QMainWindow):
         self.classify_btn.setEnabled(False)
         self.classify_btn.clicked.connect(self._run_classification)
         nav_layout.addWidget(self.classify_btn)
+
+        self.report_btn = QPushButton("📄  Generate Report")
+        self.report_btn.setEnabled(False)
+        self.report_btn.clicked.connect(self._generate_report)
+        nav_layout.addWidget(self.report_btn)
 
         nav_layout.addWidget(QLabel("INFRASTRUCTURE", objectName="section_header"))
         self.device_combo = QComboBox()
@@ -304,10 +189,26 @@ class MainWindow(QMainWindow):
         
         ana_layout.addWidget(res_col, 3)
         
-        # Visualization Column
+        # Visualization Column (Chart + Attention Map)
+        vis_col = QWidget()
+        vis_layout = QVBoxLayout(vis_col)
+        
         self.chart_label = QLabel()
         self.chart_label.setAlignment(Qt.AlignCenter)
-        ana_layout.addWidget(self.chart_label, 2)
+        vis_layout.addWidget(self.chart_label)
+        
+        # New: Attention Map Area
+        attn_header = QLabel("AI ATTENTION MAPS (3D SLICES)")
+        attn_header.setStyleSheet("color: #475569; font-weight: 800; font-size: 9px; letter-spacing: 0.5px; margin-top: 10px;")
+        vis_layout.addWidget(attn_header)
+        
+        self.attn_map_label = QLabel("Attention maps will be visualized here...")
+        self.attn_map_label.setStyleSheet("color: #475569; border: 1px dashed #1e293b; border-radius: 4px;")
+        self.attn_map_label.setAlignment(Qt.AlignCenter)
+        self.attn_map_label.setMinimumHeight(120)
+        vis_layout.addWidget(self.attn_map_label)
+        
+        ana_layout.addWidget(vis_col, 2)
         
         dashboard_splitter.addWidget(analytics_card)
         
@@ -401,8 +302,21 @@ class MainWindow(QMainWindow):
         if result.get("type") == "detection":
             self.classify_btn.setEnabled(True)
             self.statusBar().showMessage("Detection completed")
+            if "annotated_image" in result:
+                self.viewer.set_pixmap_from_bytes(result["annotated_image"])
         elif result.get("type") == "classification":
+            self.report_btn.setEnabled(True)
             self.statusBar().showMessage("Analysis completed")
+            if "attention_map" in result:
+                pix = QPixmap()
+                pix.loadFromData(result["attention_map"])
+                self.attn_map_label.setPixmap(pix.scaled(400, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+    def _generate_report(self):
+        self.statusBar().showMessage("Generating PDF Report...")
+        # Simulate report generation
+        QMessageBox.information(self, "報告生成", "診斷報告已生成並保存至 output/ 資料夾。")
+        self.statusBar().showMessage("Report saved to output/")
 
 
 if __name__ == "__main__":

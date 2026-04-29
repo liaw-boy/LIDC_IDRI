@@ -26,6 +26,11 @@ class ImageViewer(QGraphicsView):
         self.pixmap_item.setPixmap(pixmap)
         self._reset_view()
 
+    def set_pixmap_from_bytes(self, img_bytes):
+        pix = QPixmap()
+        pix.loadFromData(img_bytes)
+        self.setPixmap(pix)
+
     # -----------------------------------------------------------------
     # DICOM handling – load the first slice as a preview image
     # -----------------------------------------------------------------
