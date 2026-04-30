@@ -1,105 +1,115 @@
-/* Stitch Medical Design System - Global Stylesheet */
+/* High-Contrast Stitch Medical Design System */
+
+/* Global Default */
+QWidget {
+    background-color: transparent;
+    color: #f1f5f9; /* High contrast white-gray */
+    font-family: 'Segoe UI', 'Microsoft JhengHei', 'Arial', sans-serif;
+    font-size: 15px;
+}
 
 QMainWindow {
-    background-color: #020617; /* Slate 950 */
-    color: #f8fafc;
+    background-color: #020617; /* Deep Slate 950 */
 }
 
 /* Sidebar Styling */
 QFrame#sidebar {
     background-color: #0f172a; /* Slate 900 */
-    border-right: 1px solid #1e293b;
-    min-width: 260px;
+    border-right: 2px solid #1e293b;
+    min-width: 280px;
 }
 
 QLabel#sidebar_title {
-    font-size: 18px;
-    font-weight: bold;
-    color: #0284c7; /* Sky 600 */
-    padding: 20px;
-    margin-bottom: 10px;
+    font-size: 22px;
+    font-weight: 900;
+    color: #38bdf8; /* Bright Sky Blue */
+    padding: 30px 20px;
+    border-bottom: 1px solid #1e293b;
 }
 
-QPushButton.nav_button {
-    background-color: transparent;
-    color: #94a3b8;
-    border: none;
+QPushButton.nav_button, QPushButton {
+    background-color: #1e293b;
+    color: #f1f5f9;
+    border: 1px solid #334155;
+    border-radius: 8px;
     padding: 12px 20px;
     text-align: left;
-    font-size: 14px;
-    border-radius: 8px;
-    margin: 4px 10px;
+    font-weight: 600;
 }
 
-QPushButton.nav_button:hover {
-    background-color: #1e293b;
-    color: #f8fafc;
+QPushButton:hover {
+    background-color: #334155;
+    border-color: #38bdf8;
 }
 
-QPushButton.nav_button:checked {
+QPushButton#btn_start, QPushButton#primary_btn {
     background-color: #0284c7;
-    color: white;
+    color: #ffffff;
+    border: none;
+    font-size: 16px;
     font-weight: bold;
+    text-align: center;
 }
 
-/* Main Content Area */
-QFrame#content_area {
-    background-color: #020617;
-    padding: 20px;
-}
-
-/* Card Styling */
-QFrame.card {
-    background-color: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 12px;
-}
-
-QLabel#card_header {
-    font-size: 13px;
-    font-weight: bold;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    padding: 10px;
-}
-
-/* Diagnostic Buttons */
-QPushButton#btn_start {
-    background-color: #0284c7;
-    color: white;
-    border-radius: 8px;
-    padding: 12px;
-    font-weight: bold;
-    font-size: 14px;
-}
-
-QPushButton#btn_start:hover {
+QPushButton#btn_start:hover, QPushButton#primary_btn:hover {
     background-color: #0ea5e9;
 }
 
-QPushButton#btn_secondary {
-    background-color: #1e293b;
-    color: #f8fafc;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    padding: 10px;
+/* Main Content Area */
+QFrame#main_container {
+    background-color: #020617;
 }
 
-/* ScrollBar Styling (Medical HUD Style) */
-QScrollBar:vertical {
+/* Card Styling */
+QFrame#card {
+    background-color: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 12px;
+}
+
+QLabel#section_header {
+    font-size: 12px;
+    font-weight: bold;
+    color: #64748b; /* Muted slate for headers */
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-top: 20px;
+}
+
+/* Result Labels */
+QLabel#result_title {
+    font-size: 20px;
+    font-weight: bold;
+    color: #f8fafc;
+}
+
+QLabel#result_text {
+    font-size: 16px;
+    color: #cbd5e1;
+    line-height: 1.8;
+}
+
+/* Form Controls */
+QComboBox {
+    background-color: #1e293b;
+    border: 2px solid #334155;
+    border-radius: 6px;
+    padding: 8px;
+    color: white;
+    min-width: 150px;
+}
+
+QComboBox::drop-down {
     border: none;
+}
+
+/* ScrollBar (HUD Style) */
+QScrollBar:vertical {
     background: #020617;
-    width: 8px;
-    margin: 0px;
+    width: 10px;
 }
 
 QScrollBar::handle:vertical {
     background: #334155;
-    min-height: 20px;
-    border-radius: 4px;
-}
-
-QScrollBar::handle:vertical:hover {
-    background: #0284c7;
+    border-radius: 5px;
 }

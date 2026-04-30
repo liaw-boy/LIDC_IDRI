@@ -73,6 +73,9 @@ class MainWindow(QMainWindow):
         if os.path.exists(qss_path):
             with open(qss_path, "r", encoding="utf-8") as f:
                 self.setStyleSheet(f.read())
+        else:
+            # Fallback if file missing
+            self.setStyleSheet("QMainWindow { background-color: #020617; color: white; }")
 
     def _setup_ui(self):
         central = QWidget()
@@ -321,8 +324,8 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    # Global font tweak
-    font = QFont("Inter", 10)
+    # Global high-readability font
+    font = QFont("Microsoft JhengHei", 11)
     app.setFont(font)
     win = MainWindow()
     win.show()
