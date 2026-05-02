@@ -174,13 +174,15 @@ class ResidualAttentionBlock(nn.Module):
 # 雙輸入結節分類器
 class NoduleClassifier(nn.Module):
     def __init__(self, roi_size=32, full_ct_size=640,
-                 use_attribute_feedback: bool = False, n_aux: int = 3):
+                 use_attribute_feedback: bool = False, n_aux: int = 3,
+                 in_channels: int = 1):
         super(NoduleClassifier, self).__init__()
         self.use_attribute_feedback = use_attribute_feedback
         self.n_aux = n_aux
-        
+        self.in_channels = in_channels
+
         # ROI路徑的卷積網路
-        self.roi_conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
+        self.roi_conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
         self.roi_bn1 = nn.BatchNorm2d(32)
         self.roi_pool1 = nn.MaxPool2d(kernel_size=2)
         
@@ -200,7 +202,7 @@ class NoduleClassifier(nn.Module):
         
         # 全CT路徑的卷積網路（針對 128×128 context crop 設計）
         # 128 → pool(64) → ResAtt(64) → pool(32) → ResAtt(32) → pool(16) → ResAtt(16) → AdaptivePool(4×4)
-        self.full_ct_conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.full_ct_conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, stride=1, padding=1)
         self.full_ct_bn1 = nn.BatchNorm2d(32)
         self.full_ct_pool1 = nn.MaxPool2d(kernel_size=2)  # 128 → 64
 
