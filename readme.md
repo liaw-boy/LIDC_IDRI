@@ -83,11 +83,12 @@ Channel + Spatial 注意力雙路，結合 ResNet-style 殘差連接。
 ### 必要套件
 ```bash
 pip install ultralytics pydicom PyQt5 torch torchvision opencv-python numpy reportlab
+pip install pylidc tcia_utils  # 訓練流程需要
 ```
 
-### 啟動 GUI
+### 啟動 GUI（已有 model 權重）
 ```bash
-# 確保 models/ 目錄含有：
+# models/ 目錄需要：
 #   - best.pt                       (YOLO11n LIDC fine-tuned)
 #   - dual_input_final_model.pth    (CNN AttFB)
 
@@ -99,6 +100,93 @@ python -m gui_app.main_window
 2. 點 **「Launch Detection」** 執行 YOLO 結節偵測
 3. 點 **「Run Classification」** 執行 CNN 良惡性分類 + Lung-RADS 分級
 4. 點 **「Generate Report」** 一鍵生成 PDF 診斷報告（含截圖、KPI、行動建議）
+
+---
+
+## 🛠️ 從零訓練 (Train from Scratch)
+
+> Repo 不附 model 權重——下面是完整可重現的訓練流程，從 LIDC-IDRI 公開資料到 GUI 可運行的模型。
+
+### 步驟 1: 下載 LIDC-IDRI DICOM（分批，省磁碟）
+
+LIDC-IDRI 全套 ~125 GB。`batch_pipeline.sh` 會「下一批 → 處理 → 刪 DICOM」反覆，磁碟峰值只佔當批 ~13 GB。
+
+```bash
+# 一次下 100 人，處理完即刪 DICOM，只留 PNG slice
+bash scripts/batch_pipeline.sh 1 100
+bash scripts/batch_pipeline.sh 101 200
+# ... 共 1018 病人，但 331 已足夠跑出 100% recall
+```
+
+每批產出: `/home/lbw/project/LIDC-IDRI/nodules_hires/LIDC-IDRI-XXXX/nodule-N/{ctx,roi}/slice-NNN.png`
+
+### 步驟 2: 整合多任務標籤 CSV
+
+```bash
+python3 classification_cnn/build_lidc_dataset.py \
+    --dicom_dir /path/to/LIDC-IDRI/DICOM_organized \
+    --out_dir /home/lbw/project/LIDC-IDRI/nodules_hires
+```
+
+產出 `labels_multitask.csv`（roi_path, ctx_path, malignancy_avg, label, lobulation, spiculation, margin, ...）。
+
+### 步驟 3: 訓練 CNN (AttFeedback, 推薦)
+
+```bash
+python3 classification_cnn/train_attfeedback.py \
+    --csv /home/lbw/project/LIDC-IDRI/nodules_hires/labels_multitask.csv \
+    --epochs 60 --batch 16 --device cuda
+```
+
+- 自動 patient-level 70/15/15 split (seed=42)
+- 同時訓練 malignancy + 3 個 aux head (lobulation/spiculation/margin)
+- Aux 預測值反饋進 malignancy head（JIMI 2022）
+- 輸出: `models/dual_input_final_model.pth`（含完整 state_dict 含 aux + malignancy heads）
+- 預期 test AUC ≈ 0.997
+
+### 步驟 4: 構建 YOLO 訓練資料集
+
+```bash
+# V2: 純正向（已驗證為生產最優）
+python3 detection_yolo/build_lidc_yolo.py
+# → /home/lbw/project/LIDC-IDRI/yolo_lidc/
+
+# V3 (備選): 加 hard negatives（synthetic test 上 F1 更高，
+# 但生產 pipeline 上 B→M FP 比 V2 高，故未上線）
+python3 detection_yolo/build_lidc_yolo_v3.py
+```
+
+### 步驟 5: 訓練 YOLO
+
+```bash
+yolo detect train \
+    data=/home/lbw/project/LIDC-IDRI/yolo_lidc/data.yaml \
+    model=yolo11n.pt \
+    epochs=50 imgsz=256 batch=64 patience=0 \
+    device=0 project=detection_yolo/runs name=lidc_v2
+```
+
+訓練完: `detection_yolo/runs/lidc_v2/weights/best.pt` → 複製到 `models/best.pt`
+
+### 步驟 6: 跑 GUI 驗證
+
+```bash
+python -m gui_app.main_window
+```
+
+選任意 LIDC 病患資料夾 → 點 Detection → 點 Classification → 看 Lung-RADS 卡。
+
+---
+
+### ⏱️ 預估時間（單張 RTX 2080 Ti）
+| 步驟 | 時間 | 磁碟占用 |
+| :--- | :--- | :--- |
+| 1. 下載 + 預處理 (1018 人，建議只跑 331) | 4-8 小時 | 峰值 13 GB / 沉澱 300 MB |
+| 2. CSV 標籤整合 | 5 分鐘 | + 30 MB |
+| 3. CNN 訓練 (60 epochs) | 30 分鐘 | + 10 MB |
+| 4. YOLO dataset build | 5 分鐘 | + 100 MB |
+| 5. YOLO 訓練 (50 epochs) | 6 分鐘 | + 5 MB |
+| **總計** | **5-9 小時** | **~500 MB** |
 
 ---
 
