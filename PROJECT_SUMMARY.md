@@ -136,7 +136,7 @@ Branch:  main (latest: 1a37610 docs: add Train from Scratch guide)
 
 ## 九、未來工作（Future Work — 答辯可念稿）
 
-1. **真 3D CNN（3D ResNet / 3D DenseNet）**
+1. **3D CNN（3D ResNet / 3D DenseNet）**
    - 對 <6mm 微小結節判讀有提升空間
    - 需重建 DICOM 體素資料 + 擴大訓練集（如 LUNA16）以避免過擬合
 

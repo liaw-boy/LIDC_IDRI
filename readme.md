@@ -90,7 +90,7 @@ Channel + Spatial 注意力雙路，結合 ResNet-style 殘差連接。
 | YOLO V3 (with hard negatives) | F1 0.813（單模） | ⚠️ 備查（pipeline 沒贏 V2） |
 
 **關鍵發現:** 多視角資訊在「**推理端做 3D Gaussian 聚合**」比「輸入端做 2.5D stacking」更有效。
-這也是為什麼 future work 要走真 3D + 多中心資料（LUNA16），不是只改通道數。
+這也是為什麼 future work 要走 3D CNN + 多中心資料（LUNA16），不是只改通道數。
 
 ---
 
@@ -242,7 +242,7 @@ Lung_Nodule_System/
 
 ## 🚧 未來工作
 
-1. **真 3D CNN（3D ResNet）** — 對 <6mm 微小結節判讀有提升空間，需要重建 DICOM 體素資料
+1. **3D CNN（3D ResNet）** — 對 <6mm 微小結節判讀有提升空間，需要重建 DICOM 體素資料
 2. **外部資料集驗證 (LUNA16 / NLST)** — 證明跨資料集泛化
 3. **GUI Threshold Slider** — 醫師現場調整敏感度 vs 特異度
 4. **DICOM SR 結構化報告 + HL7 FHIR** — 對接醫院 PACS 系統
