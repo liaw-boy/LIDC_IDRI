@@ -28,3 +28,21 @@ venv/
 # Models
 models/*.pt
 models/*.pth
+models/*.backup
+models/*backup*
+
+# Pretrained YOLO weights at repo root (downloaded on demand)
+/yolo*.pt
+/yolo*.pth
+
+# Training outputs / archives / dataset bundles
+*.7z
+classification_cnn/results/
+classification_cnn/models/
+
+# Mystery / temp downloaded files
+/7zdv29aMe
+/downloaded_file
+
+# Project report (managed separately)
+*.docx

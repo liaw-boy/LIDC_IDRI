@@ -1,11 +1,83 @@
 # gui_app/nodule_classifier.py
-"""NoduleClassifier implementation with CBAM Attention and Residual Blocks.
-Extracted from the final version in predict_3DCNN(1).
+"""NoduleClassifier implementations.
+
+LegacyDualInputCNN  — deployed model: matches the trained .pth weights exactly (flat Conv).
+NoduleClassifier    — upgraded CBAM Residual architecture (reference / future retraining).
+AttentionModule / SpatialAttentionModule / ChannelAttentionModule / CBAM /
+ResidualAttentionBlock — sub-modules used only by NoduleClassifier.
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+class LegacyDualInputCNN(nn.Module):
+    """Flat-Conv dual-input architecture that matches the trained .pth weights.
+
+    ROI branch  (32×32)  → 2048-dim feature
+    FullCT branch (640×640) → 3200-dim feature
+    Fusion: concat(5248) → FC(256) → FC(128) → FC(2)
+    """
+
+    def __init__(self):
+        super().__init__()
+        # ROI branch
+        self.roi_conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
+        self.roi_bn1   = nn.BatchNorm2d(32)
+        self.roi_conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.roi_bn2   = nn.BatchNorm2d(64)
+        self.roi_conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.roi_bn3   = nn.BatchNorm2d(128)
+
+        # Full-CT branch
+        self.full_ct_conv1 = nn.Conv2d(1, 16, kernel_size=7, stride=2, padding=3)
+        self.full_ct_bn1   = nn.BatchNorm2d(16)
+        self.full_ct_conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2, padding=2)
+        self.full_ct_bn2   = nn.BatchNorm2d(32)
+        self.full_ct_conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.full_ct_bn3   = nn.BatchNorm2d(64)
+        self.full_ct_conv4 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.full_ct_bn4   = nn.BatchNorm2d(128)
+
+        # Fusion: 128*4*4 + 128*5*5 = 2048 + 3200 = 5248
+        self.fusion_fc1 = nn.Linear(5248, 256)
+        self.fusion_bn1 = nn.BatchNorm1d(256)
+        self.fusion_fc2 = nn.Linear(256, 128)
+        self.fusion_bn2 = nn.BatchNorm1d(128)
+        self.fusion_fc3 = nn.Linear(128, 2)
+        self.dropout    = nn.Dropout(0.5)
+
+    def forward(self, roi, full_ct=None):
+        # ROI: 32→16→8→4
+        x = F.relu(self.roi_bn1(self.roi_conv1(roi)))
+        x = F.max_pool2d(x, 2)
+        x = F.relu(self.roi_bn2(self.roi_conv2(x)))
+        x = F.max_pool2d(x, 2)
+        x = F.relu(self.roi_bn3(self.roi_conv3(x)))
+        x = F.max_pool2d(x, 2)
+        roi_feat = x.view(x.size(0), -1)  # 2048
+
+        # Full CT: 640→320→160→80→40→20→5
+        if full_ct is None:
+            full_ct_feat = torch.zeros(roi.size(0), 3200, device=roi.device)
+        else:
+            y = F.relu(self.full_ct_bn1(self.full_ct_conv1(full_ct)))
+            y = F.max_pool2d(y, 2)
+            y = F.relu(self.full_ct_bn2(self.full_ct_conv2(y)))
+            y = F.max_pool2d(y, 2)
+            y = F.relu(self.full_ct_bn3(self.full_ct_conv3(y)))
+            y = F.max_pool2d(y, 2)
+            y = F.relu(self.full_ct_bn4(self.full_ct_conv4(y)))
+            y = F.max_pool2d(y, 4)
+            full_ct_feat = y.view(y.size(0), -1)  # 3200
+
+        combined = torch.cat([roi_feat, full_ct_feat], dim=1)
+        combined = F.relu(self.fusion_bn1(self.fusion_fc1(combined)))
+        combined = self.dropout(combined)
+        combined = F.relu(self.fusion_bn2(self.fusion_fc2(combined)))
+        output = self.fusion_fc3(combined)
+        return output, {}
 
 
 # 注意力模組
@@ -101,8 +173,11 @@ class ResidualAttentionBlock(nn.Module):
 
 # 雙輸入結節分類器
 class NoduleClassifier(nn.Module):
-    def __init__(self, roi_size=32, full_ct_size=640):
+    def __init__(self, roi_size=32, full_ct_size=640,
+                 use_attribute_feedback: bool = False, n_aux: int = 3):
         super(NoduleClassifier, self).__init__()
+        self.use_attribute_feedback = use_attribute_feedback
+        self.n_aux = n_aux
         
         # ROI路徑的卷積網路
         self.roi_conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
@@ -116,30 +191,36 @@ class NoduleClassifier(nn.Module):
         # 第二個ROI注意力塊
         self.roi_att2 = ResidualAttentionBlock(64, 128, stride=1)
         self.roi_pool3 = nn.MaxPool2d(kernel_size=2)
-        
-        # 計算ROI路徑全連接層的輸入特徵數
-        # 經過三次池化後，32x32 -> 16x16 -> 8x8 -> 4x4
+
+        # AdaptiveAvgPool 讓 ROI branch 輸出固定 4×4，不受輸入尺寸影響
+        self.roi_adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
+
+        # 計算ROI路徑全連接層的輸入特徵數（固定 4×4）
         self.roi_fc_input_size = 128 * 4 * 4
         
-        # 全CT路徑的卷積網路
-        self.full_ct_conv1 = nn.Conv2d(1, 16, kernel_size=7, stride=2, padding=3)  # 640x640 -> 320x320
-        self.full_ct_bn1 = nn.BatchNorm2d(16)
-        self.full_ct_pool1 = nn.MaxPool2d(kernel_size=2)  # 320x320 -> 160x160
-        
+        # 全CT路徑的卷積網路（針對 128×128 context crop 設計）
+        # 128 → pool(64) → ResAtt(64) → pool(32) → ResAtt(32) → pool(16) → ResAtt(16) → AdaptivePool(4×4)
+        self.full_ct_conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.full_ct_bn1 = nn.BatchNorm2d(32)
+        self.full_ct_pool1 = nn.MaxPool2d(kernel_size=2)  # 128 → 64
+
         # 第一個全CT注意力塊
-        self.full_ct_att1 = ResidualAttentionBlock(16, 32, stride=2)  # 160x160 -> 80x80
-        self.full_ct_pool2 = nn.MaxPool2d(kernel_size=2)  # 80x80 -> 40x40
-        
+        self.full_ct_att1 = ResidualAttentionBlock(32, 64, stride=1)   # 64 → 64
+        self.full_ct_pool2 = nn.MaxPool2d(kernel_size=2)                # 64 → 32
+
         # 第二個全CT注意力塊
-        self.full_ct_att2 = ResidualAttentionBlock(32, 64, stride=2)  # 40x40 -> 20x20
-        self.full_ct_pool3 = nn.MaxPool2d(kernel_size=2)  # 20x20 -> 10x10
-        
+        self.full_ct_att2 = ResidualAttentionBlock(64, 128, stride=1)  # 32 → 32
+        self.full_ct_pool3 = nn.MaxPool2d(kernel_size=2)                # 32 → 16
+
         # 第三個全CT注意力塊
-        self.full_ct_att3 = ResidualAttentionBlock(64, 128, stride=1)  # 10x10 -> 10x10
-        self.full_ct_pool4 = nn.MaxPool2d(kernel_size=2)  # 10x10 -> 5x5
-        
+        self.full_ct_att3 = ResidualAttentionBlock(128, 128, stride=1)  # 16 → 16
+        # 移除 pool4：16 → AdaptivePool(4×4) 即可，保留更多空間資訊
+
+        # AdaptiveAvgPool 讓 full_ct branch 輸出固定 4×4，不受輸入尺寸影響
+        self.full_ct_adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
+
         # 計算全CT路徑全連接層的輸入特徵數
-        self.full_ct_fc_input_size = 128 * 5 * 5
+        self.full_ct_fc_input_size = 128 * 4 * 4  # 2048，固定大小
         
         # 融合層
         self.fusion_fc1 = nn.Linear(self.roi_fc_input_size + self.full_ct_fc_input_size, 256)
@@ -148,7 +229,17 @@ class NoduleClassifier(nn.Module):
         self.fusion_fc2 = nn.Linear(256, 128)
         self.fusion_bn2 = nn.BatchNorm1d(128)
         self.fusion_fc3 = nn.Linear(128, 2)  # 二分類：良性和惡性
-        
+
+        # Attribute Feedback heads (JIMI 2022) — optional, used when checkpoint provides them
+        if self.use_attribute_feedback:
+            self.aux_head = nn.Sequential(
+                nn.Linear(256, 64),
+                nn.ReLU(),
+                nn.Linear(64, n_aux),
+                nn.Sigmoid(),
+            )
+            self.malignancy_head = nn.Linear(128 + n_aux, 2)
+
         # 兼容舊模型的標誌
         self.is_dual_input = True
     
@@ -173,6 +264,7 @@ class NoduleClassifier(nn.Module):
         roi = self.roi_pool2(roi)
         roi, roi_att2_maps = self.roi_att2(roi)
         roi = self.roi_pool3(roi)
+        roi = self.roi_adaptive_pool(roi)  # → (B, 128, 4, 4) regardless of input size
         roi_features = roi.view(-1, self.roi_fc_input_size)
         
         # 全CT路徑
@@ -182,16 +274,22 @@ class NoduleClassifier(nn.Module):
         full_ct, full_ct_att2_maps = self.full_ct_att2(full_ct)
         full_ct = self.full_ct_pool3(full_ct)
         full_ct, full_ct_att3_maps = self.full_ct_att3(full_ct)
-        full_ct = self.full_ct_pool4(full_ct)
+        full_ct = self.full_ct_adaptive_pool(full_ct)  # 16×16 → 4×4
         full_ct_features = full_ct.view(-1, self.full_ct_fc_input_size)
         
         # 特徵融合
         combined = torch.cat((roi_features, full_ct_features), dim=1)
-        combined = F.relu(self.fusion_bn1(self.fusion_fc1(combined)))
-        combined = self.fusion_dropout(combined)
-        combined = F.relu(self.fusion_bn2(self.fusion_fc2(combined)))
-        output = self.fusion_fc3(combined)
-        
+        shared = F.relu(self.fusion_bn1(self.fusion_fc1(combined)))           # (B, 256)
+        cls_feat = F.relu(self.fusion_bn2(self.fusion_fc2(self.fusion_dropout(shared))))  # (B, 128)
+
+        if self.use_attribute_feedback:
+            # JIMI 2022 Attribute Feedback path:
+            # aux predictions feed back as explicit features into malignancy head
+            aux_preds = self.aux_head(shared)                                  # (B, n_aux)
+            output = self.malignancy_head(torch.cat([cls_feat, aux_preds], dim=1))
+        else:
+            output = self.fusion_fc3(cls_feat)
+
         # 收集所有注意力圖以供可視化
         attention_maps = {
             'roi_att1': roi_att1_maps,

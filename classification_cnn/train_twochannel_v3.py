@@ -1,3 +1,7 @@
+# Training script for NoduleClassifier (CBAM Residual Attention).
+# Trained weights are directly compatible with gui_app/model_manager.py.
+# Deploy by copying output model to: models/dual_input_final_model.pth
+
 import os
 import gc
 import cv2
@@ -14,7 +18,12 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
+
+import sys
+import os as _os
+sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))
+from gui_app.nodule_classifier import NoduleClassifier
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
@@ -31,7 +40,7 @@ class EarlyStopping:
         self.counter = 0
         self.best_score = None
         self.early_stop = False
-        self.val_loss_min = np.Inf
+        self.val_loss_min = np.inf
         self.delta = delta
         self.path = path
         self.trace_func = trace_func
@@ -134,7 +143,7 @@ def test_time_augmentation(model, roi_image, full_ct_image, device, num_augments
     
     with torch.no_grad():
         # 基本預測
-        outputs = model(roi_tensor, full_ct_tensor)
+        outputs, _ = model(roi_tensor, full_ct_tensor)
         probs = F.softmax(outputs, dim=1)
         all_probs.append(probs.cpu().numpy())
         
@@ -164,7 +173,7 @@ def test_time_augmentation(model, roi_image, full_ct_image, device, num_augments
         for aug in augmentations:
             aug_roi = aug['roi'](roi_tensor)
             aug_full_ct = aug['full_ct'](full_ct_tensor)
-            outputs = model(aug_roi, aug_full_ct)
+            outputs, _ = model(aug_roi, aug_full_ct)
             probs = F.softmax(outputs, dim=1)
             all_probs.append(probs.cpu().numpy())
             
@@ -186,7 +195,7 @@ def test_time_augmentation(model, roi_image, full_ct_image, device, num_augments
                 aug_roi = transforms.RandomAffine(degrees=0, translate=(0.01, 0.01))(aug_roi)
                 aug_full_ct = transforms.RandomAffine(degrees=0, translate=(0.005, 0.005))(aug_full_ct)
             
-            outputs = model(aug_roi, aug_full_ct)
+            outputs, _ = model(aug_roi, aug_full_ct)
             probs = F.softmax(outputs, dim=1)
             all_probs.append(probs.cpu().numpy())
     
@@ -269,8 +278,8 @@ def evaluate_dual_input(model, dataloader, criterion, device):
                 full_ct_input = full_ct_inputs[i:i+1]
                 
                 # 基本預測
-                with autocast(device_type=device.type):
-                    outputs = model(roi_input, full_ct_input)
+                with autocast('cuda'):
+                    outputs, _ = model(roi_input, full_ct_input)
                     probs = F.softmax(outputs, dim=1)
                 
                 # 對於驗證集，使用輕量級TTA (只做3次增強以節省時間)
@@ -278,8 +287,8 @@ def evaluate_dual_input(model, dataloader, criterion, device):
                     # 水平翻轉
                     flipped_roi = torch.flip(roi_input, [3])
                     flipped_full_ct = torch.flip(full_ct_input, [3])
-                    with autocast(device_type=device.type):
-                        flip_outputs = model(flipped_roi, flipped_full_ct)
+                    with autocast('cuda'):
+                        flip_outputs, _ = model(flipped_roi, flipped_full_ct)
                         flip_probs = F.softmax(flip_outputs, dim=1)
                     
                     # 輕微旋轉 (使用預定義的旋轉矩陣以加速)
@@ -292,8 +301,8 @@ def evaluate_dual_input(model, dataloader, criterion, device):
                     grid = F.affine_grid(theta.unsqueeze(0), roi_input.size(), align_corners=False)
                     rotated_roi = F.grid_sample(roi_input, grid, align_corners=False)
                     
-                    with autocast(device_type=device.type):
-                        rot_outputs = model(rotated_roi, full_ct_input)
+                    with autocast('cuda'):
+                        rot_outputs, _ = model(rotated_roi, full_ct_input)
                         rot_probs = F.softmax(rot_outputs, dim=1)
                     
                     # 平均所有預測
@@ -304,8 +313,8 @@ def evaluate_dual_input(model, dataloader, criterion, device):
                 batch_probs.append(avg_probs.cpu().numpy())
             
             # 計算批次損失
-            with autocast(device_type=device.type):
-                outputs = model(roi_inputs, full_ct_inputs)
+            with autocast('cuda'):
+                outputs, _ = model(roi_inputs, full_ct_inputs)
                 loss = criterion(outputs, labels)
             
             # 統計
@@ -342,7 +351,7 @@ def train_dual_input_model(model, train_loader, test_loader, num_epochs=150, use
     
     # 處理類別不平衡問題
     # 計算類別權重 - 使用更平衡的方式
-    train_labels = [label for _, _, label in train_loader.dataset.data_list]
+    train_labels = [label for _, label in train_loader.dataset.data_list]
     class_counts = [train_labels.count(0), train_labels.count(1)]
     total_samples = sum(class_counts)
     # 使用平方根縮放來平衡類別權重
@@ -351,8 +360,8 @@ def train_dual_input_model(model, train_loader, test_loader, num_epochs=150, use
     
     print(f"類別權重: {class_weights.tolist()}")
     
-    # 使用混合損失函數
-    criterion = MixedLoss(alpha=0.6)  # 60% 焦點損失, 40% 標籤平滑交叉熵
+    # 使用混合損失函數，傳入類別權重解決類別不平衡
+    criterion = MixedLoss(alpha=0.6, class_weights=class_weights)
     
     # 使用 AdamW 優化器，調整參數
     optimizer = optim.AdamW(
@@ -444,7 +453,7 @@ def train_dual_input_model(model, train_loader, test_loader, num_epochs=150, use
                     )
                 else:
                     # 標準訓練
-                    outputs = model(roi_inputs, full_ct_inputs)
+                    outputs, _ = model(roi_inputs, full_ct_inputs)
                     loss = criterion(outputs, labels)
                     
                     # 反向傳播和優化
@@ -539,7 +548,7 @@ def train_dual_input_model(model, train_loader, test_loader, num_epochs=150, use
         current_epoch += phase_epochs
     
     # 載入 Early Stopping 保存的最佳模型
-    model.load_state_dict(torch.load('models/dual_input_early_stop_best_model.pth'))
+    model.load_state_dict(torch.load('models/dual_input_early_stop_best_model.pth', weights_only=True))
     
     # 在測試集上進行最終評估 - 使用改進的評估函數
     test_loss, test_acc, test_precision, test_recall, test_f1, test_auc, test_labels, test_preds, test_probs = evaluate_dual_input(
@@ -551,7 +560,7 @@ def train_dual_input_model(model, train_loader, test_loader, num_epochs=150, use
           f"召回率: {test_recall:.4f}, F1: {test_f1:.4f}, AUC: {test_auc:.4f}")
     
     # 也評估 AUC 最佳模型
-    model.load_state_dict(torch.load('models/dual_input_best_auc_model.pth'))
+    model.load_state_dict(torch.load('models/dual_input_best_auc_model.pth', weights_only=True))
     auc_test_loss, auc_test_acc, auc_test_precision, auc_test_recall, auc_test_f1, auc_test_auc, auc_test_labels, auc_test_preds, auc_test_probs = evaluate_dual_input(
         model, test_loader, criterion, device
     )
@@ -561,7 +570,7 @@ def train_dual_input_model(model, train_loader, test_loader, num_epochs=150, use
           f"召回率: {auc_test_recall:.4f}, F1: {auc_test_f1:.4f}, AUC: {auc_test_auc:.4f}")
     
         # 評估 F1 最佳模型
-    model.load_state_dict(torch.load('models/dual_input_best_f1_model.pth'))
+    model.load_state_dict(torch.load('models/dual_input_best_f1_model.pth', weights_only=True))
     f1_test_loss, f1_test_acc, f1_test_precision, f1_test_recall, f1_test_f1, f1_test_auc, f1_test_labels, f1_test_preds, f1_test_probs = evaluate_dual_input(
         model, test_loader, criterion, device
     )
@@ -619,20 +628,21 @@ def train_dual_input_model(model, train_loader, test_loader, num_epochs=150, use
 
 # 7. 混合損失函數 - 結合多種損失函數提高穩定性
 class MixedLoss(nn.Module):
-    def __init__(self, alpha=0.5, gamma=2.0, smooth_factor=0.1):
+    def __init__(self, alpha=0.5, gamma=2.0, smooth_factor=0.1, class_weights=None):
         """
         混合損失函數：結合焦點損失和標籤平滑交叉熵
-        
+
         參數:
             alpha: 焦點損失的權重
             gamma: 焦點損失的聚焦參數
             smooth_factor: 標籤平滑因子
+            class_weights: 類別權重張量，用於解決類別不平衡問題
         """
         super(MixedLoss, self).__init__()
         self.alpha = alpha
         self.gamma = gamma
         self.smooth_factor = smooth_factor
-        self.ce = nn.CrossEntropyLoss(reduction='none')
+        self.ce = nn.CrossEntropyLoss(weight=class_weights, reduction='none')
     
     def forward(self, inputs, targets):
         # 標準交叉熵
@@ -661,8 +671,8 @@ class MixedLoss(nn.Module):
 def train_with_gradient_accumulation(model, roi_inputs, full_ct_inputs, labels, criterion, optimizer, scaler, accumulation_steps, current_step, total_steps, device):
     """使用梯度累積和混合精度訓練的單步訓練"""
     # 前向傳播
-    with autocast(device_type=device.type):
-        outputs = model(roi_inputs, full_ct_inputs)
+    with autocast('cuda'):
+        outputs, _ = model(roi_inputs, full_ct_inputs)
         loss = criterion(outputs, labels) / accumulation_steps
     
     # 反向傳播
@@ -785,35 +795,33 @@ class DualInputCNN(nn.Module):
         
         # 分類
         output = self.classifier(attended_features)
-        
-        return output
+
+        return output, {}  # 與 LegacyDualInputCNN 介面一致，第二個值留給注意力圖
 
 # 10. 自注意力機制 - 增強特徵提取
 class SelfAttention(nn.Module):
+    """Gated channel attention for 1-D feature vectors.
+
+    Original bmm-based implementation had a dimension mismatch:
+    bmm((B, dim//8, dim//8), (B, dim, 1)) — inner dims differ → runtime crash.
+    Fixed to dot-product gate: scalar attention weight * value + residual.
+    """
     def __init__(self, in_dim):
         super(SelfAttention, self).__init__()
         self.query = nn.Linear(in_dim, in_dim // 8)
-        self.key = nn.Linear(in_dim, in_dim // 8)
+        self.key   = nn.Linear(in_dim, in_dim // 8)
         self.value = nn.Linear(in_dim, in_dim)
         self.gamma = nn.Parameter(torch.zeros(1))
-        
+        self._scale = (in_dim // 8) ** 0.5
+
     def forward(self, x):
-        batch_size, dim = x.size()
-        
-        # 計算注意力分數
-        proj_query = self.query(x).view(batch_size, -1, 1)  # B x C x 1
-        proj_key = self.key(x).view(batch_size, -1, 1)  # B x C x 1
-        energy = torch.bmm(proj_query, proj_key.transpose(1, 2))  # B x C x C
-        attention = F.softmax(energy, dim=1)
-        
-        # 應用注意力
-        proj_value = self.value(x).view(batch_size, -1, 1)  # B x C x 1
-        out = torch.bmm(attention, proj_value).view(batch_size, -1)
-        
-        # 殘差連接
-        out = self.gamma * out + x
-        
-        return out
+        q = self.query(x)                                      # (B, dim//8)
+        k = self.key(x)                                        # (B, dim//8)
+        score = (q * k).sum(dim=-1, keepdim=True) / self._scale  # (B, 1) scalar gate
+        attn  = torch.sigmoid(score)                           # (B, 1)
+        v     = self.value(x)                                  # (B, dim)
+        out   = attn * v                                       # (B, dim)
+        return self.gamma * out + x                            # residual
 
 # 11. 資料增強與預處理
 def create_data_loaders(roi_dir, full_ct_dir, batch_size=32, roi_size=32, full_ct_size=640, val_split=0.2, test_split=0.1, seed=42):
@@ -946,11 +954,15 @@ class DualInputDataset(Dataset):
         # 讀取 ROI 影像
         roi_path = os.path.join(self.roi_dir, roi_file)
         roi_image = cv2.imread(roi_path, cv2.IMREAD_GRAYSCALE)
+        if roi_image is None:
+            raise FileNotFoundError(f"ROI 影像讀取失敗: {roi_path}")
         roi_image = cv2.resize(roi_image, (self.roi_size, self.roi_size))
-        
+
         # 讀取全CT影像
         full_ct_path = os.path.join(self.full_ct_dir, full_ct_file)
         full_ct_image = cv2.imread(full_ct_path, cv2.IMREAD_GRAYSCALE)
+        if full_ct_image is None:
+            raise FileNotFoundError(f"Full CT 影像讀取失敗: {full_ct_path}")
         full_ct_image = cv2.resize(full_ct_image, (self.full_ct_size, self.full_ct_size))
         
         # 應用轉換
@@ -969,25 +981,26 @@ class DualInputDataset(Dataset):
 # 13. 主函數 - 整合所有功能
 def main():
     """主函數 - 整合所有功能"""
-    # 設定參數
-    roi_dir = 'data/roi_images'
-    full_ct_dir = 'data/full_ct_images'
-    batch_size = 32
-    roi_size = 32
-    full_ct_size = 640
-    num_epochs = 150
-    
-    # 確保結果目錄存在
-    if not os.path.exists('results'):
-        os.makedirs('results')
-    
-    # 創建資料載入器
-    train_loader, val_loader, test_loader = create_data_loaders(
-        roi_dir, full_ct_dir, batch_size, roi_size, full_ct_size
+    batch_size   = 16
+    roi_size     = 64
+    full_ct_size = 128   # ctx crop size (256 from disk → resized to 128 for model)
+    num_epochs   = 150
+
+    os.makedirs('results', exist_ok=True)
+
+    from lidc_csv_dataset import create_csv_loaders
+    csv_path = os.environ.get(
+        "LIDC_LABELS_CSV",
+        "/home/lbw/project/LIDC-IDRI/nodules_hires/labels.csv"
+    )
+    train_loader, val_loader, test_loader = create_csv_loaders(
+        csv_path=csv_path,
+        batch_size=batch_size,
+        roi_size=roi_size,
+        ctx_size=full_ct_size,
     )
     
-    # 創建模型
-    model = DualInputCNN(roi_size, full_ct_size)
+    model = NoduleClassifier(roi_size=roi_size, full_ct_size=full_ct_size)
     
     # 訓練模型
     history, best_model_path = train_dual_input_model(
@@ -995,7 +1008,7 @@ def main():
     )
     
     # 載入最佳模型
-    model.load_state_dict(torch.load(best_model_path))
+    model.load_state_dict(torch.load(best_model_path, weights_only=True))
     
     # 在測試集上評估
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -1043,17 +1056,20 @@ def main():
     # 繪製訓練歷史
     plt.figure(figsize=(12, 5))
     
+    def _to_list(vals):
+        return [v.cpu().item() if hasattr(v, 'cpu') else float(v) for v in vals]
+
     plt.subplot(1, 2, 1)
-    plt.plot(history['train_losses'], label='訓練')
-    plt.plot(history['val_losses'], label='驗證')
+    plt.plot(_to_list(history['train_losses']), label='訓練')
+    plt.plot(_to_list(history['val_losses']), label='驗證')
     plt.title('損失')
     plt.xlabel('Epoch')
     plt.ylabel('損失')
     plt.legend()
-    
+
     plt.subplot(1, 2, 2)
-    plt.plot(history['train_accs'], label='訓練')
-    plt.plot(history['val_accs'], label='驗證')
+    plt.plot(_to_list(history['train_accs']), label='訓練')
+    plt.plot(_to_list(history['val_accs']), label='驗證')
     plt.title('準確率')
     plt.xlabel('Epoch')
     plt.ylabel('準確率')

@@ -136,8 +136,8 @@ def export_roi_info_and_images(slices, xml_filename, output_dir, root_sop_dir, c
             try:
                 ds = dicom.dcmread(dcm_file)
                 pixel_array = ds.pixel_array
-                image = ((pixel_array - pixel_array.min()) / \
-                         (pixel_array.max() - pixel_array.min()) * 255).astype(np.uint8)
+                ptp = pixel_array.max() - pixel_array.min()
+                image = ((pixel_array - pixel_array.min()) / (ptp if ptp > 0 else 1) * 255).astype(np.uint8)
 
                 mask_image = np.zeros_like(image)
                 overlay_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)

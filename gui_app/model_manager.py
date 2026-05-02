@@ -8,7 +8,7 @@ import os
 import yaml
 import torch
 from ultralytics import YOLO
-from .nodule_classifier import NoduleClassifier  # assuming the original class is in a separate file
+from .nodule_classifier import NoduleClassifier
 
 
 class ModelManager:
@@ -42,11 +42,32 @@ class ModelManager:
             cnn_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", cnn_path))
         if not os.path.exists(cnn_path):
             raise FileNotFoundError(f"CNN model not found at {cnn_path}")
-        # instantiate architecture (same class definition is in cnn_detector_v1.py – we import it)
-        self.cnn_model = NoduleClassifier()
-        self.cnn_model.load_state_dict(torch.load(cnn_path, map_location=self.device))
+
+        raw_sd = torch.load(cnn_path, map_location=self.device, weights_only=True)
+        # Detect Attribute Feedback wrapper checkpoint
+        # (saved by train_attfeedback.py — keys prefixed `backbone.` plus aux_head/malignancy_head)
+        has_attfb = any(k.startswith("aux_head.") or k.startswith("malignancy_head.")
+                        for k in raw_sd.keys())
+        if has_attfb:
+            sd = {(k[len("backbone."):] if k.startswith("backbone.") else k): v
+                  for k, v in raw_sd.items()}
+            n_aux_w = raw_sd.get("aux_head.2.weight")
+            n_aux = n_aux_w.shape[0] if n_aux_w is not None else 3
+            self.cnn_model = NoduleClassifier(use_attribute_feedback=True, n_aux=n_aux)
+        else:
+            sd = raw_sd
+            self.cnn_model = NoduleClassifier(use_attribute_feedback=False)
+
+        self.cnn_model.load_state_dict(sd)
         self.cnn_model.eval()
         self.cnn_model.to(self.device)
+        print(f"[CNN] loaded {'AttributeFeedback' if has_attfb else 'baseline'} model from {os.path.basename(cnn_path)}")
+
+    def get_yolo(self):
+        return self.yolo_model
+
+    def get_cnn(self):
+        return self.cnn_model
 
     # ---------------------------------------------------------------------
     # Device management

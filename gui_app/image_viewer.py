@@ -35,23 +35,29 @@ class ImageViewer(QGraphicsView):
     # DICOM handling – load the first slice as a preview image
     # -----------------------------------------------------------------
     def load_dicom_series(self, file_paths):
-        """Load a series of DICOM files, return QPixmap of the first slice.
+        """Load a series of medical image files (DICOM or PNG/JPG), return QPixmap of first slice.
         The full list is stored for later processing.
         """
         if not file_paths:
             return None
-        # Load first slice to display
-        ds = pydicom.dcmread(file_paths[0])
-        img = ds.pixel_array
-        if img.ndim == 3:  # sometimes colour
-            img = img[..., 0]
-        # Normalise to 0‑255
-        img = ((img - img.min()) / (img.ptp() + 1e-8) * 255).astype(np.uint8)
+        first = file_paths[0]
+        if first.lower().endswith(".dcm"):
+            ds = pydicom.dcmread(first)
+            img = ds.pixel_array
+            if img.ndim == 3:
+                img = img[..., 0]
+        else:
+            import cv2
+            img = cv2.imread(first, cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                return None
+        img = ((img - img.min()) / (np.ptp(img) + 1e-8) * 255).astype(np.uint8)
+        img = np.ascontiguousarray(img)
         height, width = img.shape
         qimg = QImage(img.data, width, height, width, QImage.Format_Grayscale8)
-        pix = QPixmap.fromImage(qimg)
-        # Store paths for later use
+        pix = QPixmap.fromImage(qimg).copy()
         self.dicom_paths = file_paths
+        self.setPixmap(pix)
         return pix
 
     # -----------------------------------------------------------------

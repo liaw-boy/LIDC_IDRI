@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap, QIcon
 from .image_viewer import ImageViewer
+from .lung_rads_card import LungRadsPanel
 from .model_manager import ModelManager
 from .predictor import Predictor
 
@@ -58,6 +59,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Lung Nodule AI Diagnostic System v2.0")
         self.resize(1280, 850)
+        # 確保中文字型在任何啟動方式下都生效
+        app = QApplication.instance()
+        if app:
+            app.setFont(QFont("Noto Sans CJK TC", 13))
         
         # Load configuration
         self.config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
@@ -103,7 +108,7 @@ class MainWindow(QMainWindow):
         nav_layout.setSpacing(8)
 
         nav_layout.addWidget(QLabel("SOURCE DATA", objectName="section_header"))
-        self.load_btn = QPushButton("📂  Import DICOM")
+        self.load_btn = QPushButton("📁  Import Study Folder")
         self.load_btn.clicked.connect(self._load_dicom)
         nav_layout.addWidget(self.load_btn)
 
@@ -127,7 +132,8 @@ class MainWindow(QMainWindow):
 
         nav_layout.addWidget(QLabel("INFRASTRUCTURE", objectName="section_header"))
         self.device_combo = QComboBox()
-        self.device_combo.addItems(["cpu", "cuda"])
+        devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+        self.device_combo.addItems(devices)
         self.device_combo.setCurrentText(self.config.get("device", "cpu"))
         self.device_combo.currentTextChanged.connect(self._change_device)
         nav_layout.addWidget(self.device_combo)
@@ -135,7 +141,7 @@ class MainWindow(QMainWindow):
         nav_layout.addStretch()
         
         system_status = QLabel("● ENGINE READY")
-        system_status.setStyleSheet("color: #10b981; font-weight: 800; font-size: 10px; padding: 20px;")
+        system_status.setStyleSheet("color: #10b981; font-weight: 700; font-size: 11px; padding: 20px;")
         nav_layout.addWidget(system_status)
 
         sidebar_layout.addWidget(nav_container)
@@ -159,7 +165,7 @@ class MainWindow(QMainWindow):
         vp_layout.setContentsMargins(15, 15, 15, 15)
         
         vp_header = QLabel("SURGICAL VIEWPORT")
-        vp_header.setStyleSheet("color: #475569; font-weight: 800; font-size: 10px; letter-spacing: 1px;")
+        vp_header.setStyleSheet("color: #64748b; font-weight: 700; font-size: 11px;")
         vp_layout.addWidget(vp_header)
         
         self.viewer = ImageViewer()
@@ -188,7 +194,10 @@ class MainWindow(QMainWindow):
         self.result_label.setWordWrap(True)
         self.result_label.setAlignment(Qt.AlignTop)
         res_layout.addWidget(self.result_label)
-        res_layout.addStretch()
+
+        # Lung-RADS color-coded card panel (demo-grade visualization)
+        self.lung_rads_panel = LungRadsPanel()
+        res_layout.addWidget(self.lung_rads_panel, 1)
         
         ana_layout.addWidget(res_col, 3)
         
@@ -201,12 +210,12 @@ class MainWindow(QMainWindow):
         vis_layout.addWidget(self.chart_label)
         
         # New: Attention Map Area
-        attn_header = QLabel("AI ATTENTION MAPS (3D SLICES)")
-        attn_header.setStyleSheet("color: #475569; font-weight: 800; font-size: 9px; letter-spacing: 0.5px; margin-top: 10px;")
+        attn_header = QLabel("ROI 放大圖（32×32）")
+        attn_header.setStyleSheet("color: #64748b; font-weight: 700; font-size: 11px; margin-top: 10px;")
         vis_layout.addWidget(attn_header)
-        
-        self.attn_map_label = QLabel("Attention maps will be visualized here...")
-        self.attn_map_label.setStyleSheet("color: #475569; border: 1px dashed #1e293b; border-radius: 4px;")
+
+        self.attn_map_label = QLabel("執行分類後將顯示結節 ROI 放大圖")
+        self.attn_map_label.setStyleSheet("color: #475569; border: 1px dashed #334155; border-radius: 6px; padding: 8px;")
         self.attn_map_label.setAlignment(Qt.AlignCenter)
         self.attn_map_label.setMinimumHeight(120)
         vis_layout.addWidget(self.attn_map_label)
@@ -261,18 +270,38 @@ class MainWindow(QMainWindow):
     # File handling & core actions
     # ---------------------------------------------------------------------
     def _load_dicom(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "選擇 DICOM 檔案序列", "", "DICOM Files (*.dcm)")
+        # Doctor flow: pick a single study folder; we auto-scan all medical images inside
+        folder = QFileDialog.getExistingDirectory(self, "選擇病患 study 資料夾")
+        if not folder:
+            return
+        files = self._scan_study_folder(folder)
         if not files:
+            QMessageBox.warning(self, "載入失敗",
+                                "資料夾內找不到 DICOM (.dcm) 或影像 (.png/.jpg) 檔案。")
             return
         self.dicom_paths = files
         pixmap = self.viewer.load_dicom_series(files)
         if pixmap:
             self.viewer.setPixmap(pixmap)
             self.detect_btn.setEnabled(True)
-            self.result_label.setText(f"已載入 {len(files)} 片 DICOM 影像。系統準備就緒，請啟動偵測程序。")
-            self.statusBar().showMessage(f"Loaded {len(files)} slices")
+            self.result_label.setText(
+                f"已載入 {len(files)} 片影像。\n"
+                f"Study folder: {os.path.basename(folder)}\n"
+                f"系統準備就緒，請啟動偵測程序。"
+            )
+            self.statusBar().showMessage(f"Loaded {len(files)} slices from {folder}")
         else:
-            QMessageBox.warning(self, "載入失敗", "無法解析選定的 DICOM 檔案。")
+            QMessageBox.warning(self, "載入失敗", "無法解析選定的影像檔案。")
+
+    def _scan_study_folder(self, folder: str) -> list[str]:
+        """Recursively find medical image files in a study folder, sorted."""
+        exts = (".dcm", ".png", ".jpg", ".jpeg")
+        found: list[str] = []
+        for root, _, files in os.walk(folder):
+            for f in files:
+                if f.lower().endswith(exts):
+                    found.append(os.path.join(root, f))
+        return sorted(found)
 
     def _run_detection(self):
         if not hasattr(self, "dicom_paths"):
@@ -285,10 +314,17 @@ class MainWindow(QMainWindow):
         self._run_in_thread(self.predictor.run_classification, self.dicom_paths)
 
     def _run_in_thread(self, func, *args):
+        if hasattr(self, "thread") and self.thread.isRunning():
+            QMessageBox.warning(self, "請稍候", "上一個分析任務仍在執行中，請等待完成後再試。")
+            return
+        self.detect_btn.setEnabled(False)
+        self.classify_btn.setEnabled(False)
         self.thread = WorkerThread(func, *args)
         self.thread.progress.connect(lambda msg: self.statusBar().showMessage(msg))
         self.thread.finished.connect(self._handle_result)
+        self.thread.finished.connect(lambda: self.detect_btn.setEnabled(True))
         self.thread.error.connect(lambda err: QMessageBox.critical(self, "運算錯誤", err))
+        self.thread.error.connect(lambda: self.detect_btn.setEnabled(True))
         self.thread.start()
 
     def _handle_result(self, result):
@@ -310,6 +346,10 @@ class MainWindow(QMainWindow):
         elif result.get("type") == "classification":
             self.report_btn.setEnabled(True)
             self.statusBar().showMessage("Analysis completed")
+            if "nodules" in result and hasattr(self, "lung_rads_panel"):
+                self.lung_rads_panel.render_nodules(result["nodules"])
+            if result.get("ct_with_attention"):
+                self.viewer.set_pixmap_from_bytes(result["ct_with_attention"])
             if "attention_map" in result:
                 pix = QPixmap()
                 pix.loadFromData(result["attention_map"])
@@ -317,16 +357,37 @@ class MainWindow(QMainWindow):
 
     def _generate_report(self):
         self.statusBar().showMessage("Generating PDF Report...")
-        # Simulate report generation
-        QMessageBox.information(self, "報告生成", "診斷報告已生成並保存至 output/ 資料夾。")
-        self.statusBar().showMessage("Report saved to output/")
+        try:
+            from .pdf_report import generate_pdf_report
+            import datetime
+            nodules = list(getattr(self.predictor, "_last_nodules", []) or [])
+            if not nodules:
+                QMessageBox.warning(self, "報告生成", "尚未執行分類，無法生成報告。")
+                self.statusBar().clearMessage()
+                return
+            patient_id = "Unknown"
+            if getattr(self, "dicom_paths", None):
+                base = os.path.basename(os.path.dirname(self.dicom_paths[0]))
+                if base:
+                    patient_id = base
+            output_dir = self.config.get("output_dir", "output")
+            os.makedirs(output_dir, exist_ok=True)
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            pdf_path = os.path.join(output_dir, f"report_{patient_id}_{ts}.pdf")
+            kpi = {"n_test": 70, "recall": 1.0, "fpr": 0.054, "f1": 0.971}
+            shot_path = os.path.join(output_dir, f"snapshot_{patient_id}_{ts}.png")
+            self.grab().save(shot_path)
+            generate_pdf_report(pdf_path, patient_id, nodules,
+                                screenshots=(shot_path,), kpi=kpi)
+            QMessageBox.information(self, "報告生成", f"診斷報告已生成: {pdf_path}")
+            self.statusBar().showMessage(f"Report saved: {pdf_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "報告生成失敗", str(e))
+            self.statusBar().clearMessage()
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    # Global high-readability font
-    font = QFont("Microsoft JhengHei", 11)
-    app.setFont(font)
     win = MainWindow()
     win.show()
     sys.exit(app.exec_())

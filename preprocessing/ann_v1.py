@@ -242,7 +242,8 @@ def export_roi_info_and_images(slices, non_nodule_slices, xml_filename, external
                 ds = dicom.dcmread(dcm_file)
                 pixel_array = ds.pixel_array
                 # 將影像標準化至 0~255
-                image = ((pixel_array - pixel_array.min()) / (pixel_array.max() - pixel_array.min()) * 255).astype(np.uint8)
+                ptp = pixel_array.max() - pixel_array.min()
+                image = ((pixel_array - pixel_array.min()) / (ptp if ptp > 0 else 1) * 255).astype(np.uint8)
 
                 nodule = slice_data["nodules"][0]
                 points = np.array(nodule["segmentation"]).reshape(-1, 2)
@@ -342,8 +343,9 @@ def export_roi_info_and_images(slices, non_nodule_slices, xml_filename, external
                 ds = dicom.dcmread(dcm_file)
                 pixel_array = ds.pixel_array
                 # 將影像標準化至 0~255
-                image = ((pixel_array - pixel_array.min()) / (pixel_array.max() - pixel_array.min()) * 255).astype(np.uint8)
-                
+                ptp = pixel_array.max() - pixel_array.min()
+                image = ((pixel_array - pixel_array.min()) / (ptp if ptp > 0 else 1) * 255).astype(np.uint8)
+
                 # 儲存 non-nodule 切片
                 non_nodule_filename = f"{sop_uid}.png"
                 cv2.imwrite(os.path.join(non_nodule_dir, non_nodule_filename), image)

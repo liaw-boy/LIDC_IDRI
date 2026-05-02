@@ -351,9 +351,16 @@ def export_roi_info_and_images_by_malignancy(slices, xml_filename, output_dir, c
             try:
                 # 讀取DICOM檔案
                 ds = dicom.dcmread(dcm_file)
-                pixel_array = ds.pixel_array
-                # 將影像標準化至 0~255
-                image = ((pixel_array - pixel_array.min()) / (pixel_array.max() - pixel_array.min()) * 255).astype(np.uint8)
+                pixel_array = ds.pixel_array.astype(np.float32)
+                # Convert to HU then apply lung window (WC=-600, WW=1500)
+                # Must match predictor.py inference normalization exactly
+                slope = float(getattr(ds, "RescaleSlope", 1))
+                intercept = float(getattr(ds, "RescaleIntercept", 0))
+                hu = pixel_array * slope + intercept
+                wc, ww = -600, 1500
+                lo, hi = wc - ww // 2, wc + ww // 2
+                image = np.clip(hu, lo, hi)
+                image = ((image - lo) / ww * 255).astype(np.uint8)
                 
                 # 使用完整的UID作為檔案名稱基礎
                 safe_uid = sop_uid.replace('.', '_')
@@ -461,7 +468,7 @@ def process_xml_file(xml_path, output_dir, csv_writer):
 
 
 def main():
-    root_dir = 'D:/LUNA16'
+    root_dir = os.environ.get('LUNA16_DIR', './LUNA16')
     output_dir = './outputct+roi_0406'  # 統一輸出資料夾
     ensure_directory(output_dir)
 

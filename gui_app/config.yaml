@@ -1,6 +1,22 @@
 cnn:
-  model_path: H:\Lung_Nodule_System\models\dual_input_final_model.pth
+  model_path: models/dual_input_final_model.pth
 device: cpu
+# threshold: malignant probability cutoff (0.0-1.0).
+# 0.4 = high-recall mode (flags borderline cases as malignant to minimize missed cancer).
+# Raise to 0.5 for balanced, or 0.6 for high-precision mode.
 threshold: 0.4
+# yolo_conf: minimum YOLO detection confidence to accept a box.
+# Calibrated for LIDC-finetuned YOLO11n (max raw conf ~0.7 on test set).
+# 0.05 = optimal recall (E2E malig recall 100% verified on test set)
+# Raise to 0.10-0.20 to suppress more false positives.
+yolo_conf: 0.05
+# min_box_px: minimum bounding box side length in pixels.
+# Boxes smaller than this are noise (real nodules are >=5px in typical CT resolution).
+min_box_px: 5
+# group_gap: maximum allowed gap (blank slices) between nodule slices in one 3D group.
+# 0 = strictly continuous; 1 = allow one missing slice between.
+group_gap: 1
+# output_dir: directory for saving classification reports.
+output_dir: output
 yolo:
-  model_path: H:\Lung_Nodule_System\models\best.pt
+  model_path: models/best.pt
