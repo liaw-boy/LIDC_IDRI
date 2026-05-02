@@ -3,6 +3,8 @@
 淡江大學資訊工程系專題研究成果。結合 YOLO 物件偵測與雙路徑 CNN 多任務分類，輔助放射科醫師判讀肺結節良惡性，並依 Lung-RADS 分級提出後續處置建議。
 
 > 📌 此版本（v2.0）基於 LIDC-IDRI 公開資料集，於 51 病患 holdout test split 上達成 **100% 惡性結節召回**（Bootstrap 95% CI [1.0, 1.0]）與 **5.4% 良性誤判率**。
+>
+> 📄 **完整收官報告：[PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)**（架構、KPI、消融實驗、合規驗證、未來工作）
 
 ---
 
@@ -75,6 +77,20 @@
 
 ### CBAM Residual Attention
 Channel + Spatial 注意力雙路，結合 ResNet-style 殘差連接。
+
+---
+
+## 🧪 消融實驗（Ablation）
+
+| 變體 | Test AUC | 部署狀態 |
+|:---|:---:|:---:|
+| 1ch baseline (multi-task only) | 0.984 | — |
+| **1ch + AttFB + 3D Gaussian agg** | **0.997** | ✅ **Production** |
+| 2.5D (3 adjacent slices stacked) + AttFB | 0.992-0.995 | ⚠️ 備查（沒贏，未部署） |
+| YOLO V3 (with hard negatives) | F1 0.813（單模） | ⚠️ 備查（pipeline 沒贏 V2） |
+
+**關鍵發現:** 多視角資訊在「**推理端做 3D Gaussian 聚合**」比「輸入端做 2.5D stacking」更有效。
+這也是為什麼 future work 要走真 3D + 多中心資料（LUNA16），不是只改通道數。
 
 ---
 
@@ -221,6 +237,15 @@ Lung_Nodule_System/
 - Random seed 固定為 42，YOLO 與 CNN 使用**完全相同的 split**
 - Test set 51 病患從未被任何模型在訓練或驗證階段見過
 - 所有 KPI 報告皆基於 holdout test set，符合機器學習評估規範
+
+---
+
+## 🚧 未來工作
+
+1. **真 3D CNN（3D ResNet）** — 對 <6mm 微小結節判讀有提升空間，需要重建 DICOM 體素資料
+2. **外部資料集驗證 (LUNA16 / NLST)** — 證明跨資料集泛化
+3. **GUI Threshold Slider** — 醫師現場調整敏感度 vs 特異度
+4. **DICOM SR 結構化報告 + HL7 FHIR** — 對接醫院 PACS 系統
 
 ---
 
