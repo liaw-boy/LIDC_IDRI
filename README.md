@@ -133,7 +133,7 @@ YOLO 偵測的還原結果（YOLO11x，350 epoch 設定，第 292 epoch 由 pati
 ## 快速開始
 
 1. 安裝套件：`pip install ultralytics pydicom PyQt5 torch opencv-python tqdm`
-2. 取得權重（`best.pt`、`dual_input_best_auc_model.pth`，不含於 git，sha256 見 [REPRODUCE.md](REPRODUCE.md)），放到 `gui_app/`
+2. 取得權重（`best.pt`、`dual_input_best_auc_model.pth`，不含於 git，sha256 見 [REPRODUCE.md](REPRODUCE.md)），放到 `gui_app/`（GUI 從該目錄讀取；`reproduce/07_eval_pretrained.py` 則讀 `models/`）
 3. 將病人資料夾放在程式目錄下，執行：`python gui_app/cnn_detector_v1.py`
 
 ## 早期資料整理腳本（2024-12）
