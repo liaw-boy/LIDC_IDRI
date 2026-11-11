@@ -24,3 +24,6 @@ venv/
 /dataset/
 /sample_data/
 /results/
+
+# 文件圖片（說明書擷取）
+!docs/images/*.png
